@@ -19,11 +19,12 @@ class DashboardController extends Controller
 
         // Total orders
         $totalOrders = Order::count();
-        $pendingOrders = Order::where('status', 'pending')->count();
-        $completedOrders = Order::where('status', 'completed')->count();
+        $pendingPaymentOrders = Order::where('payment_status', 'pending')->count();
+        $completedOrders = Order::where('order_status', 'completed')->count();
 
-        // Revenue (only from completed orders)
-        $revenue = Order::where('status', 'completed')
+        // Revenue (only from completed orders with paid payment)
+        $revenue = Order::where('order_status', 'completed')
+            ->where('payment_status', 'paid')
             ->sum('total_amount');
 
         // Low stock products (stock < 10)
@@ -37,11 +38,12 @@ class DashboardController extends Controller
         $recentOrders = Order::with('user')
             ->orderBy('created_at', 'desc')
             ->limit(5)
-            ->get(['id', 'order_number', 'status', 'total_amount', 'created_at']);
+            ->get(['id', 'order_number', 'payment_status', 'order_status', 'total_amount', 'created_at']);
 
-        // Sales by status
-        $salesByStatus = Order::select('status', DB::raw('count(*) as count'), DB::raw('sum(total_amount) as total'))
-            ->groupBy('status')
+        // Sales by order_status (fulfillment status)
+        $salesByStatus = Order::select('order_status', DB::raw('count(*) as count'), DB::raw('sum(total_amount) as total'))
+            ->where('payment_status', 'paid')  // Only count paid orders
+            ->groupBy('order_status')
             ->get();
 
         return response()->json([
@@ -56,7 +58,7 @@ class DashboardController extends Controller
                 ],
                 'orders' => [
                     'total' => $totalOrders,
-                    'pending' => $pendingOrders,
+                    'pending_payment' => $pendingPaymentOrders,
                     'completed' => $completedOrders,
                 ],
                 'revenue' => [

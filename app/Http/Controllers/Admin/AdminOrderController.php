@@ -13,13 +13,23 @@ use Illuminate\Support\Facades\DB;
 
 class AdminOrderController extends Controller
 {
-    // GET /api/admin/orders - List all orders (filter by status)
+    // GET /api/admin/orders - List all orders (filter by payment_status or order_status)
     public function index(Request $request)
     {
         $query = Order::with(['user', 'orderItems.product']);
 
+        // Filter by payment_status or order_status
+        if ($paymentStatus = $request->query('payment_status')) {
+            $query->where('payment_status', $paymentStatus);
+        }
+        
+        if ($orderStatus = $request->query('order_status')) {
+            $query->where('order_status', $orderStatus);
+        }
+
+        // Legacy support: if 'status' is used, treat as order_status
         if ($status = $request->query('status')) {
-            $query->where('status', $status);
+            $query->where('order_status', $status);
         }
 
         $orders = $query->orderBy('created_at', 'desc')->paginate(15);
@@ -44,33 +54,55 @@ class AdminOrderController extends Controller
         ]);
     }
 
-    // PUT /api/admin/orders/{id}/status - Update status
+    /**
+     * PUT /api/admin/orders/{id}/status - Update order fulfillment status
+     * 
+     * IMPORTANT: Admin can ONLY update order_status (fulfillment workflow).
+     * payment_status is controlled EXCLUSIVELY by Midtrans webhook.
+     */
     public function updateStatus(UpdateOrderStatusRequest $request, $id)
     {
         $order = Order::with('orderItems.product')->findOrFail($id);
-        $newStatus = $request->validated()['status'];
-        $oldStatus = $order->status;
+        $newOrderStatus = $request->validated()['order_status'];
+        $oldOrderStatus = $order->order_status;
+
+        // Business Rule: Order can only be fulfilled if payment is paid
+        if (!$order->isPaymentPaid() && $newOrderStatus !== 'new') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot update order status. Payment must be paid first.',
+                'errors' => [
+                    'payment_status' => ['Current payment status: ' . ucfirst($order->payment_status)],
+                ],
+            ], 422);
+        }
 
         DB::beginTransaction();
         try {
             // If changing to completed: reduce stock
-            if ($newStatus === 'completed' && $oldStatus !== 'completed') {
+            if ($newOrderStatus === 'completed' && $oldOrderStatus !== 'completed') {
+                // Additional check: ensure payment is paid
+                if (!$order->isPaymentPaid()) {
+                    throw new \Exception('Cannot complete order. Payment must be paid first.');
+                }
                 $this->reduceStockForOrder($order, $request->user());
             }
 
-            // If cancelling a completed order: return stock
-            if ($newStatus === 'cancelled' && $oldStatus === 'completed') {
+            // If changing to refunded: return stock
+            if ($newOrderStatus === 'refunded' && $oldOrderStatus !== 'refunded') {
                 $this->returnStockForOrder($order, $request->user());
             }
 
-            $order->update(['status' => $newStatus]);
+            // Update ONLY order_status (never touch payment_status)
+            $order->order_status = $newOrderStatus;
+            $order->save();
             $order->load(['user', 'orderItems.product']);
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Order status updated',
+                'message' => 'Order fulfillment status updated',
                 'data' => new OrderResource($order),
             ]);
 
@@ -139,7 +171,7 @@ class AdminOrderController extends Controller
                 'stock_before' => $stockBefore,
                 'stock_after' => $stockAfter,
                 'type' => 'in',
-                'description' => "Order #{$order->order_number} cancelled - stock returned",
+                'description' => "Order #{$order->order_number} refunded - stock returned",
             ]);
         }
     }

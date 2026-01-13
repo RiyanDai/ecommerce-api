@@ -12,6 +12,8 @@ use App\Http\Controllers\Customer\OrderController;
 use App\Http\Controllers\Customer\ProfileController;
 use App\Http\Controllers\ShopController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\MidtransController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -95,3 +97,21 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     // Logout
     Route::post('/logout', [AdminAuthController::class, 'logout'])->name('logout');
 });
+
+
+
+// ===== MIDTRANS PAYMENT ROUTES =====
+Route::middleware(['auth', 'customer'])->group(function () {
+    Route::post('/payment/snap-token', [MidtransController::class, 'generateSnapToken'])->name('payment.snap-token');
+    Route::post('/payment/check-status', [MidtransController::class, 'checkPaymentStatus'])->name('payment.check-status');
+});
+// Midtrans Webhook (public, excluded from CSRF, must be accessible from internet)
+// Handle both POST (actual webhook) and GET (test from dashboard)
+Route::match(['get', 'post'], '/payment/midtrans-webhook', [MidtransController::class, 'handleNotification'])->name('payment.webhook');
+Route::get('/payment/midtrans-webhook/test', function() {
+    return response()->json([
+        'success' => true,
+        'message' => 'Webhook endpoint is accessible',
+        'timestamp' => now()->toDateTimeString(),
+    ]);
+})->name('payment.webhook.test');

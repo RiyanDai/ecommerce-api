@@ -13,8 +13,18 @@ class AdminOrderWebController extends Controller
     {
         $query = Order::with(['user', 'orderItems.product']);
 
+        // Filter by payment_status or order_status
+        if ($paymentStatus = $request->query('payment_status')) {
+            $query->where('payment_status', $paymentStatus);
+        }
+        
+        if ($orderStatus = $request->query('order_status')) {
+            $query->where('order_status', $orderStatus);
+        }
+
+        // Legacy support: if 'status' is used, treat as order_status
         if ($status = $request->query('status')) {
-            $query->where('status', $status);
+            $query->where('order_status', $status);
         }
 
         $orders = $query->orderBy('created_at', 'desc')->paginate(15);
@@ -28,30 +38,51 @@ class AdminOrderWebController extends Controller
         return view('admin.orders.show', compact('order'));
     }
 
+    /**
+     * Update order fulfillment status (order_status)
+     * 
+     * IMPORTANT: Admin can ONLY update order_status (fulfillment workflow).
+     * payment_status is controlled EXCLUSIVELY by Midtrans webhook and cannot be changed here.
+     * 
+     * Business Rules:
+     * - Order can only be fulfilled if payment_status is 'paid'
+     * - Stock is reduced when order_status changes to 'completed'
+     * - Stock is returned when order_status changes to 'refunded'
+     */
     public function updateStatus(UpdateOrderStatusRequest $request, $id)
     {
         $order = Order::with('orderItems.product')->findOrFail($id);
-        $newStatus = $request->validated()['status'];
-        $oldStatus = $order->status;
+        $newOrderStatus = $request->validated()['order_status'];
+        $oldOrderStatus = $order->order_status;
 
-        // Use the same logic from AdminOrderController
-        $adminOrderController = new \App\Http\Controllers\Admin\AdminOrderController();
-        
+        // Business Rule: Order can only be fulfilled if payment is paid
+        if (!$order->isPaymentPaid() && $newOrderStatus !== 'new') {
+            return redirect()->back()
+                ->with('error', 'Cannot update order status. Payment must be paid first. Current payment status: ' . ucfirst($order->payment_status));
+        }
+
         try {
             // If changing to completed: reduce stock
-            if ($newStatus === 'completed' && $oldStatus !== 'completed') {
+            if ($newOrderStatus === 'completed' && $oldOrderStatus !== 'completed') {
+                // Additional check: ensure payment is paid
+                if (!$order->isPaymentPaid()) {
+                    return redirect()->back()
+                        ->with('error', 'Cannot complete order. Payment must be paid first.');
+                }
                 $this->reduceStockForOrder($order, $request->user());
             }
 
-            // If cancelling a completed order: return stock
-            if ($newStatus === 'cancelled' && $oldStatus === 'completed') {
+            // If changing to refunded: return stock
+            if ($newOrderStatus === 'refunded' && $oldOrderStatus !== 'refunded') {
                 $this->returnStockForOrder($order, $request->user());
             }
 
-            $order->update(['status' => $newStatus]);
+            // Update ONLY order_status (never touch payment_status)
+            $order->order_status = $newOrderStatus;
+            $order->save();
 
             return redirect()->route('admin.orders.show', $order->id)
-                ->with('success', 'Order status updated successfully.');
+                ->with('success', 'Order fulfillment status updated successfully.');
         } catch (\Exception $e) {
             return redirect()->back()
                 ->with('error', 'Failed to update order status: ' . $e->getMessage());

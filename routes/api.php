@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\StockController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\MidtransController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
 use Illuminate\Http\Request;
@@ -66,4 +67,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::put('/orders/{id}/cancel', [OrderController::class, 'cancel']);
+
+    // Payment (using Sanctum token auth)
+    Route::post('/payment/snap-token', [MidtransController::class, 'generateSnapToken']);
+    Route::post('/payment/check-status', [MidtransController::class, 'checkPaymentStatus']);
 });
+
+// Midtrans Webhook (public, excluded from CSRF, must be accessible from internet)
+Route::match(['get', 'post'], '/payment/midtrans-webhook', [MidtransController::class, 'handleNotification']);

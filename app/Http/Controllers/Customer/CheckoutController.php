@@ -43,12 +43,24 @@ class CheckoutController extends Controller
         $carts = Cart::with('product')->where('user_id', auth()->id())->get();
 
         if ($carts->isEmpty()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Your cart is empty!',
+                ], 422);
+            }
             return redirect()->route('cart.index')->with('error', 'Your cart is empty!');
         }
 
         // Validate stock again
         foreach ($carts as $cart) {
             if ($cart->product->stock < $cart->quantity) {
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Insufficient stock for {$cart->product->name}",
+                    ], 422);
+                }
                 return redirect()->route('cart.index')
                     ->with('error', "Insufficient stock for {$cart->product->name}");
             }
@@ -64,11 +76,14 @@ class CheckoutController extends Controller
                 return $cart->quantity * $cart->product->price;
             });
 
-            // Create order
+            // Create order with initial statuses
+            // payment_status: 'pending' (will be updated by Midtrans webhook)
+            // order_status: 'new' (will be updated by admin for fulfillment)
             $order = Order::create([
                 'user_id' => auth()->id(),
                 'order_number' => $orderNumber,
-                'status' => 'pending',
+                'payment_status' => 'pending',  // Controlled by Midtrans webhook
+                'order_status' => 'new',         // Controlled by admin
                 'total_amount' => $totalAmount,
             ]);
 
@@ -88,11 +103,33 @@ class CheckoutController extends Controller
 
             DB::commit();
 
+            // Reload order with relationships for validation
+            $order->load(['orderItems.product', 'user']);
+
+            // Return JSON for AJAX requests (payment flow)
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Order created successfully',
+                    'order_number' => $order->order_number,
+                    'order_id' => $order->id,
+                ]);
+            }
+
+            // Regular form submission (fallback)
             return redirect()->route('order.success', $order->order_number)
                 ->with('success', 'Order placed successfully!');
 
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to process order. Please try again.',
+                ], 500);
+            }
+            
             return back()->with('error', 'Failed to process order. Please try again.');
         }
     }

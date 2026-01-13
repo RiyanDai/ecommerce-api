@@ -15,9 +15,11 @@ class AdminDashboardWebController extends Controller
         $totalProducts = Product::count();
         $activeProducts = Product::where('is_active', true)->count();
         $totalOrders = Order::count();
-        $pendingOrders = Order::where('status', 'pending')->count();
-        $completedOrders = Order::where('status', 'completed')->count();
-        $revenue = Order::where('status', 'completed')->sum('total_amount');
+        $pendingPaymentOrders = Order::where('payment_status', 'pending')->count();
+        $completedOrders = Order::where('order_status', 'completed')->count();
+        $revenue = Order::where('order_status', 'completed')
+            ->where('payment_status', 'paid')
+            ->sum('total_amount');
         $lowStockProducts = Product::where('stock', '<', 10)
             ->where('is_active', true)
             ->orderBy('stock', 'asc')
@@ -32,7 +34,7 @@ class AdminDashboardWebController extends Controller
             'totalProducts',
             'activeProducts',
             'totalOrders',
-            'pendingOrders',
+            'pendingPaymentOrders',
             'completedOrders',
             'revenue',
             'lowStockProducts',

@@ -28,7 +28,7 @@
             <div class="ml-4">
                 <p class="text-gray-600 text-sm">Total Orders</p>
                 <p class="text-2xl font-bold text-gray-800">{{ $totalOrders }}</p>
-                <p class="text-xs text-gray-500">{{ $pendingOrders }} pending</p>
+                <p class="text-xs text-gray-500">{{ $pendingPaymentOrders }} pending payment</p>
             </div>
         </div>
     </div>
@@ -110,7 +110,22 @@
                             </div>
                             <div class="text-right">
                                 <p class="font-semibold text-gray-800">Rp {{ number_format($order->total_amount, 0, ',', '.') }}</p>
-                                <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">{{ $order->status }}</span>
+                                <div class="flex flex-col items-end gap-1 mt-1">
+                                    <span class="px-2 py-1 rounded text-xs font-semibold
+                                        {{ $order->payment_status == 'paid' ? 'bg-green-100 text-green-800' : '' }}
+                                        {{ $order->payment_status == 'pending' ? 'bg-yellow-100 text-yellow-800' : '' }}
+                                        {{ $order->payment_status == 'failed' || $order->payment_status == 'expired' ? 'bg-red-100 text-red-800' : '' }}">
+                                        {{ ucfirst($order->payment_status) }}
+                                    </span>
+                                    <span class="px-2 py-1 rounded text-xs
+                                        {{ $order->order_status == 'completed' ? 'bg-green-100 text-green-800' : '' }}
+                                        {{ $order->order_status == 'new' ? 'bg-gray-100 text-gray-800' : '' }}
+                                        {{ $order->order_status == 'processing' ? 'bg-blue-100 text-blue-800' : '' }}
+                                        {{ $order->order_status == 'shipped' ? 'bg-purple-100 text-purple-800' : '' }}
+                                        {{ $order->order_status == 'refunded' ? 'bg-red-100 text-red-800' : '' }}">
+                                        {{ ucfirst($order->order_status) }}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     @endforeach

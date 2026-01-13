@@ -12,7 +12,8 @@ class OrderResource extends JsonResource
         return [
             'id' => $this->id,
             'order_number' => $this->order_number,
-            'status' => $this->status,
+            'payment_status' => $this->payment_status,  // Controlled by Midtrans webhook
+            'order_status' => $this->order_status,        // Controlled by admin
             'total_amount' => $this->total_amount,
             'user' => new UserResource($this->whenLoaded('user')),
             'order_items' => OrderItemResource::collection($this->whenLoaded('orderItems')),
