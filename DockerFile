@@ -1,46 +1,70 @@
-# Base image PHP 8.1 + Apache
-FROM php:8.1-apache
+# =========================
+# Base Image
+# =========================
+FROM php:8.2-cli
 
-# Enable Apache rewrite (penting buat Laravel)
-RUN a2enmod rewrite
-
-# Install system dependencies
+# =========================
+# System Dependencies
+# =========================
 RUN apt-get update && apt-get install -y \
     git \
+    curl \
     unzip \
-    libzip-dev \
+    zip \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
-    zip \
-    curl \
-    && docker-php-ext-install pdo pdo_mysql mbstring zip exif pcntl
+    libzip-dev \
+    libpq-dev \
+    default-mysql-client \
+    && docker-php-ext-configure gd --with-jpeg \
+    && docker-php-ext-install \
+        pdo \
+        pdo_mysql \
+        pdo_pgsql \
+        mbstring \
+        exif \
+        pcntl \
+        bcmath \
+        gd \
+        zip \
+        sodium
 
+# =========================
 # Install Composer
+# =========================
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Set working directory
+# =========================
+# Install Node.js (18.x)
+# =========================
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs
+
+# =========================
+# Working Directory
+# =========================
 WORKDIR /var/www/html
 
-# Copy composer files first (biar cache kepake)
-COPY composer.json composer.lock ./
-
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
-
-# Copy all project files
+# =========================
+# Copy App Files
+# =========================
 COPY . .
 
-# Set permission (Laravel)
-RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+# =========================
+# Install Dependencies
+# =========================
+RUN composer install --no-dev --optimize-autoloader \
+    && npm install \
+    && npm run build || true
 
-# Apache document root ke /public
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN sed -ri 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
+# =========================
+# Expose Port (Railway uses $PORT)
+# =========================
+EXPOSE 8000
 
-# Expose port (Railway pakai PORT env)
-EXPOSE 80
-
-# Start Apache
-CMD ["apache2-foreground"]
+# =========================
+# Start Laravel
+# =========================
+CMD php artisan migrate --force || true && \
+    php artisan serve --host=0.0.0.0 --port=${PORT:-8000}
