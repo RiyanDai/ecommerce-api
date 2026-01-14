@@ -60,11 +60,14 @@ class OrderController extends Controller
                 return $cart->quantity * $cart->product->price;
             });
 
-            // Create order
+            // Create order with initial statuses
+            // payment_status: 'pending' (will be updated by Midtrans webhook)
+            // order_status: 'new' (will be updated by admin for fulfillment)
             $order = Order::create([
                 'user_id' => $user->id,
                 'order_number' => $orderNumber,
-                'status' => 'pending',
+                'payment_status' => 'pending',  // Controlled by Midtrans webhook
+                'order_status' => 'new',         // Controlled by admin
                 'total_amount' => $totalAmount,
             ]);
 
@@ -127,10 +130,20 @@ class OrderController extends Controller
 
     public function index(Request $request)
     {
-        $orders = Order::with('orderItems.product')
-            ->where('user_id', $request->user()->id)
-            ->latest()
-            ->get();
+        $query = Order::with('orderItems.product')
+            ->where('user_id', $request->user()->id);
+        
+        // Filter by payment_status
+        if ($paymentStatus = $request->query('payment_status')) {
+            $query->where('payment_status', $paymentStatus);
+        }
+        
+        // Filter by order_status
+        if ($orderStatus = $request->query('order_status')) {
+            $query->where('order_status', $orderStatus);
+        }
+        
+        $orders = $query->latest()->get();
 
         return response()->json([
             'success' => true,
@@ -160,19 +173,32 @@ class OrderController extends Controller
     public function cancel(Request $request, $id)
     {
         $order = Order::where('user_id', $request->user()->id)
-            ->where('status', 'pending')
             ->find($id);
 
         if (!$order) {
             return response()->json([
                 'success' => false,
-                'message' => 'Order cannot be cancelled',
+                'message' => 'Order not found',
+            ], 404);
+        }
+
+        // Business rule: Only pending payment and new order can be cancelled
+        if (!$order->isPaymentPending()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order cannot be cancelled. Payment status: ' . ucfirst($order->payment_status),
             ], 400);
         }
 
-        $order->update([
-            'status' => 'cancelled',
-        ]);
+        if (!$order->isOrderNew()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order cannot be cancelled. Order status: ' . ucfirst($order->order_status),
+            ], 400);
+        }
+
+        $order->payment_status = 'failed'; // Customer-initiated cancellation
+        $order->save();
 
         return response()->json([
             'success' => true,
