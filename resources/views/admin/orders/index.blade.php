@@ -98,9 +98,9 @@
         </tbody>
     </table>
 </div>
-
+@endsection
 <div class="mt-4">
     {{ $orders->links() }}
 </div>
-@endsection
+
 
