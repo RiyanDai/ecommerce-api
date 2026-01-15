@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class OrderController extends Controller
 {
@@ -170,6 +171,15 @@ class OrderController extends Controller
         ]);
     }
 
+    /**
+     * Cancel order
+     * 
+     * Can cancel order even if midtrans_order_id exists, as long as:
+     * - Payment status is still 'pending' (not paid yet)
+     * - Order status is 'new' (not yet processed)
+     * 
+     * Supports both POST and PUT methods for Flutter compatibility
+     */
     public function cancel(Request $request, $id)
     {
         $order = Order::where('user_id', $request->user()->id)
@@ -182,8 +192,22 @@ class OrderController extends Controller
             ], 404);
         }
 
+        Log::info('Order cancellation requested', [
+            'order_id' => $order->id,
+            'order_number' => $order->order_number,
+            'midtrans_order_id' => $order->midtrans_order_id,
+            'payment_status' => $order->payment_status,
+            'order_status' => $order->order_status,
+        ]);
+
         // Business rule: Only pending payment and new order can be cancelled
+        // Note: Order can be cancelled even if midtrans_order_id exists, as long as payment is still pending
         if (!$order->isPaymentPending()) {
+            Log::warning('Order cancellation rejected: Payment not pending', [
+                'order_id' => $order->id,
+                'payment_status' => $order->payment_status,
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Order cannot be cancelled. Payment status: ' . ucfirst($order->payment_status),
@@ -191,14 +215,26 @@ class OrderController extends Controller
         }
 
         if (!$order->isOrderNew()) {
+            Log::warning('Order cancellation rejected: Order not new', [
+                'order_id' => $order->id,
+                'order_status' => $order->order_status,
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Order cannot be cancelled. Order status: ' . ucfirst($order->order_status),
             ], 400);
         }
 
-        $order->payment_status = 'failed'; // Customer-initiated cancellation
+        // Update payment status to failed (customer-initiated cancellation)
+        $order->payment_status = 'failed';
         $order->save();
+
+        Log::info('Order cancelled successfully', [
+            'order_id' => $order->id,
+            'order_number' => $order->order_number,
+            'midtrans_order_id' => $order->midtrans_order_id,
+        ]);
 
         return response()->json([
             'success' => true,

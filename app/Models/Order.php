@@ -12,6 +12,7 @@ class Order extends Model
     protected $fillable = [
         'user_id',
         'order_number',
+        'midtrans_order_id', // Saved Midtrans order_id for fast status lookup
         'payment_status',  // Controlled ONLY by Midtrans webhook: pending, paid, failed, expired
         'order_status',    // Controlled by admin: new, processing, shipped, completed, refunded
         'total_amount',

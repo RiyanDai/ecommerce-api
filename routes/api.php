@@ -29,6 +29,8 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'me']);
+    Route::put('/user', [AuthController::class, 'updateProfile']);
+    Route::put('/profile', [AuthController::class, 'updateProfile']); // Alias for convenience
 });
 
 // Public routes
@@ -66,7 +68,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
-    Route::put('/orders/{id}/cancel', [OrderController::class, 'cancel']);
+    Route::match(['post', 'put'], '/orders/{id}/cancel', [OrderController::class, 'cancel']);
 
     // Payment (using Sanctum token auth)
     Route::post('/payment/snap-token', [MidtransController::class, 'generateSnapToken']);
